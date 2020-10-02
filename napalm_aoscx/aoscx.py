@@ -562,7 +562,7 @@ class AOSCXDriver(NetworkDriver):
         """
         raise NotImplementedError
 
-    def _get_fan_info(params={}, **kwargs):
+    def _get_fan_info(self, params={}, **kwargs):
         """
         Perform a GET call to get the fan information of the switch
         Note that this works for physical devices, not an OVA.
@@ -588,7 +588,7 @@ class AOSCXDriver(NetworkDriver):
 
         return fan_info_dict
 
-    def _get_temperature(params={}, **kwargs):
+    def _get_temperature(self, params={}, **kwargs):
         """
         Perform a GET call to get the temperature information of the switch
         Note that this works for physical devices, not an OVA.
@@ -614,7 +614,7 @@ class AOSCXDriver(NetworkDriver):
 
         return temp_info_dict
 
-    def _get_power_supplies(params={}, **kwargs):
+    def _get_power_supplies(self, params={}, **kwargs):
         """
         Perform a GET call to get the power supply information of the switch
         Note that this works for physical devices, not an OVA.
@@ -640,7 +640,7 @@ class AOSCXDriver(NetworkDriver):
 
         return temp_info_dict
 
-    def _get_resource_utilization(params={}, **kwargs):
+    def _get_resource_utilization(self, params={}, **kwargs):
         """
         Perform a GET call to get the cpu, memory, and open_fds of the switch
         Note that this works for physical devices, not an OVA.
