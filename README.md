@@ -7,8 +7,6 @@ may have not been properly tested in older versions.
 
 ## Current Support Functionality 
     * get_arp_table - Get the ARP table from a device.
-    * get_bgp_neighbors - Get the BGP Neighbors from a device.
-    * get_bgp_neighbors_detail - Get a detailed BGP neighbor from a device.
     * get_config - Get configuration from the device.
     * get_facts - Get the version, serial number, vendor, model, and uptime from a device.
     * get_interfaces - Get list of interfaces from a device.

@@ -22,6 +22,7 @@ import telnetlib
 import tempfile
 import uuid
 import inspect
+import logging
 from collections import defaultdict
 
 from netaddr import IPNetwork
@@ -44,7 +45,7 @@ from napalm.base.helpers import (
     transform_lldp_capab,
     textfsm_extractor,
 )
-import napalm.base.constants as C
+import napalm.base.constants as c
 
 # Aruba AOS-CX lib
 import pyaoscx
@@ -66,6 +67,7 @@ class AOSCXDriver(NetworkDriver):
         self.profile = [self.platform]
         self.session_info = {}
         self.isAlive = False
+        self.candidate_config = ''
 
         self.base_url = "https://{0}/rest/v1/".format(self.hostname)
 
@@ -177,7 +179,6 @@ class AOSCXDriver(NetworkDriver):
 
         return interfaces_return
 
-
     def get_interfaces_counters(self):
         """
         Implementation of NAPALM method get_interfaces_counters.  This gives statistic information
@@ -231,7 +232,6 @@ class AOSCXDriver(NetworkDriver):
             )
         return interface_stats_dictionary
 
-
     def get_lldp_neighbors(self):
         """
         Implementation of NAPALM method 'get_lldp_neighbors'.  This is used to retrieve all
@@ -249,20 +249,18 @@ class AOSCXDriver(NetworkDriver):
             interface_name = pyaoscx.common_ops._replace_percents(interface_name)
             interface_details = \
                 pyaoscx.lldp.get_lldp_neighbor_info(interface_name, **self.session_info)
-            interface_dictionary = {
-                interface_name: {
-                    [
-                        {
-                            'hostname': interface_details['neighbor_info']['chassis_name'],
-                            'port:': interface_details['port_id']
-                        }
-                    ]
+
+            if interface_name not in lldp_brief_return.keys():
+                lldp_brief_return[interface_name] = []
+
+            lldp_brief_return[interface_name].append(
+                {
+                    'hostname': interface_details['neighbor_info']['chassis_name'],
+                    'port:': interface_details['port_id']
                 }
-            }
-            lldp_brief_return.update(interface_dictionary)
+            )
 
         return lldp_brief_return
-
 
     def get_lldp_neighbors_detail(self, interface=""):
         """
@@ -293,13 +291,30 @@ class AOSCXDriver(NetworkDriver):
             * remote_system_enabled_capab (list)
 
         """
-        interface_details = pyaoscx.lldp.get_lldp_neighbor_info(interface, **self.session_info)
-        remote_capabilities = [x.lower() for x in interface_details['chassis_capability_available']]
-        remote_enabled = [x.lower() for x in interface_details['chassis_capability_enabled']]
-        lldp_details_return = {
-            interface: [
+        lldp_interfaces = []
+        lldp_details_return = {}
+        if interface:
+            lldp_interfaces.append(interface)
+        else:
+            lldp_interfaces_list = pyaoscx.lldp.get_all_lldp_neighbors(**self.session_info)
+            for interface_uri in lldp_interfaces_list:
+                interface_name = interface_uri[interface_uri.find('interfaces/') + 11:
+                                               interface_uri.rfind('/lldp_neighbors')]
+                interface_name = pyaoscx.common_ops._replace_percents(interface_name)
+                lldp_interfaces.append(interface_name)
+
+        for single_interface in lldp_interfaces:
+            if single_interface not in lldp_details_return.keys():
+                lldp_details_return[single_interface] = []
+
+            interface_details = pyaoscx.lldp.get_lldp_neighbor_info(single_interface, **self.session_info)
+            remote_capabilities = ''.join(
+                [x.lower() for x in interface_details['neighbor_info']['chassis_capability_available']])
+            remote_enabled = ''.join(
+                [x.lower() for x in interface_details['neighbor_info']['chassis_capability_enabled']])
+            lldp_details_return[single_interface].append(
                 {
-                    'parent_interface': interface,
+                    'parent_interface': single_interface,
                     'remote_chassis_id': interface_details['chassis_id'],
                     'remote_system_name': interface_details['neighbor_info']['chassis_name'],
                     'remote_port': interface_details['port_id'],
@@ -309,11 +324,83 @@ class AOSCXDriver(NetworkDriver):
                         interface_details['neighbor_info']['chassis_description'],
                     'remote_system_capab': remote_capabilities,
                     'remote_system_enable_capab':  remote_enabled
-                }
-            ]
-        }
-
+                    }
+            )
         return lldp_details_return
+
+    def get_environment(self):
+        """
+        Implementation of NAPALM method get_environment()
+        :return: Returns a dictionary where:
+            * fans is a dictionary of dictionaries where the key is the location and the values:
+                 * status (True/False) - True if it's ok, false if it's broken
+            * temperature is a dict of dictionaries where the key is the location and the values:
+                 * temperature (float) - Temperature in celsius the sensor is reporting.
+                 * is_alert (True/False) - True if the temperature is above the alert threshold
+                 * is_critical (True/False) - True if the temp is above the critical threshold
+            * power is a dictionary of dictionaries where the key is the PSU id and the values:
+                 * status (True/False) - True if it's ok, false if it's broken
+                 * capacity (float) - Capacity in W that the power supply can support
+                 * output (float) - Watts drawn by the system (Not Supported)
+            * cpu is a dictionary of dictionaries where the key is the ID and the values:
+                 * %usage - Current percent usage of the device
+            * memory is a dictionary with:
+                 * available_ram (int) - Total amount of RAM installed in the device (Not Supported)
+                 * used_ram (int) - RAM in use in the device
+        """
+        fan_details = self._get_fan_info(**self.session_info)
+        fan_dict = {}
+        for fan in fan_details:
+            new_dict = {fan['name']: fan['status'] == 'ok'}
+            fan_dict.update(new_dict)
+
+        temp_details = self._get_temperature(**self.session_info)
+        temp_dict = {}
+        for sensor in temp_details:
+            new_dict = {
+                sensor['location']: {
+                    'temperature': float(sensor['temperature']/1000),
+                    'is_alert': sensor['status'] == 'critical',
+                    'is_critical': sensor['status'] == 'emergency'
+                }
+            }
+            temp_dict.update(new_dict)
+
+        psu_details = self._get_power_supplies(**self.session_info)
+        psu_dict = {}
+        for psu in psu_details:
+            new_dict = {
+                psu['name']: {
+                    'status': psu['status'] == 'ok',
+                    'capacity': float(psu['characteristics']['maximum_power']),
+                    'output': 'N/A'
+                }
+            }
+            psu_dict.update(new_dict)
+
+        resources_details = self._get_resource_utilization(**self.session_info)
+        cpu_dict = {}
+        mem_dict = {}
+        for mm in resources_details:
+            new_dict = {
+                mm['name']: {
+                    '%usage': mm['resource_utilization']['cpu']
+                }
+            }
+            cpu_dict.update(new_dict)
+            mem_dict = {
+                'available_ram': 'N/A',
+                'used_ram': mm['resource_utilization']['memory']
+            }
+
+        environment = {
+            'fans': fan_dict,
+            'temperature': temp_dict,
+            'power': psu_dict,
+            'cpu': cpu_dict,
+            'memory': mem_dict
+        }
+        return environment
 
     def get_arp_table(self, vrf=""):
         """
@@ -454,3 +541,362 @@ class AOSCXDriver(NetworkDriver):
             )
         return mac_entries
 
+    def get_snmp_information(self):
+        """
+        Implementation of NAPALM method get_snmp_information.  This returns a dict of dicts containing SNMP
+        configuration.
+        :return: Returns a lists of dictionaries. Each inner dictionary contains these fields:
+            * chassis_id (string)
+            * community (dictionary with community string specific information)
+                * acl (string) # acl number or name (Unsupported)
+                * mode (string) # read-write (rw), read-only (ro) (Unsupported)
+            * contact (string)
+            * location (string)
+        """
+        snmp_dict = {
+            "chassis_id": "",
+            "community": {},
+            "contact": "",
+            "location": ""
+        }
+
+        systeminfo = pyaoscx.system.get_system_info(**self.session_info)
+        productinfo = pyaoscx.system.get_product_info(**self.session_info)
+
+        communities_dict = {}
+        for community_name in systeminfo['snmp_communities']:
+            communities_dict[community_name] = {
+                'acl': '',
+                'mode': ''
+            }
+
+        snmp_dict['chassis_id'] = productinfo['product_info']['serial_number']
+        snmp_dict['community'] = communities_dict
+        snmp_dict['contact'] = systeminfo['other_config']['system_contact']
+        snmp_dict['location'] = systeminfo['other_config']['system_location']
+
+        return snmp_dict
+
+    def get_ntp_servers(self):
+        """
+        Implementation of NAPALM method get_ntp_servers.  Returns the NTP servers configuration as dictionary.
+        The keys of the dictionary represent the IP Addresses of the servers.
+        Note: Inner dictionaries do not have yet any available keys.
+        :return: A dictionary with keys that are the NTP associations.
+        """
+        return self._get_ntp_associations(**self.session_info)
+
+    def get_config(self, retrieve="all", full=False):
+        """
+        Return the configuration of a device. Currently this is limited to JSON format
+
+        :param retrieve: String to determine which configuration type you want to retrieve, default is all of them.
+                              The rest will be set to "".
+        :param full: Boolean to retrieve all the configuration. (Not supported)
+        :return: The object returned is a dictionary with a key for each configuration store:
+            - running(string) - Representation of the native running configuration
+            - candidate(string) - Representation of the candidate configuration.
+            - startup(string) - Representation of the native startup configuration.
+        """
+        if retrieve not in ["running", "candidate", "startup", "all"]:
+            raise Exception("ERROR: Not a valid option to retrieve.\nPlease select from 'running', 'candidate', "
+                            "'startup', or 'all'")
+        else:
+            config_dict = {
+                "running": "",
+                "startup": "",
+                "candidate": ""
+            }
+            if retrieve in ["running", "all"]:
+                config_dict['running'] = self._get_json_configuration("running-config")
+            if retrieve in ["startup", "all"]:
+                config_dict['startup'] = self._get_json_configuration("startup-config")
+            if retrieve in ["candidate", "all"]:
+                config_dict['candidate'] = self.candidate_config
+
+        return config_dict
+
+
+    def ping(self, destination, source=c.PING_SOURCE, ttl=c.PING_TTL, timeout=c.PING_TIMEOUT, size=c.PING_SIZE,
+             count=c.PING_COUNT, vrf=c.PING_VRF):
+        """
+        Executes ping on the device and returns a dictionary with the result.  Currently only IPv4 is supported.
+
+        :param destination: Host or IP Address of the destination
+        :param source (optional): Source address of echo request (Not Supported)
+        :param ttl (optional): Maximum number of hops (Not Supported)
+        :param timeout (optional): Maximum seconds to wait after sending final packet
+        :param size (optional): Size of request (bytes)
+        :param count (optional): Number of ping request to send
+        :return: Output dictionary that has one of following keys:
+            * error
+            * success - In case of success, inner dictionary will have the followin keys:
+                * probes_sent (int)
+                * packet_loss (int)
+                * rtt_min (float)
+                * rtt_max (float)
+                * rtt_avg (float)
+                * rtt_stddev (float)
+                * results (list)
+                    * ip_address (str)
+                    * rtt (float)
+        """
+        ping_results = self._ping_destination(destination, is_ipv4=True, data_size=size, time_out=timeout,
+                                              interval=2, reps=count, time_stamp=False, record_route=False,
+                                              vrf=vrf, **self.session_info)
+
+        full_results = ping_results['statistics']
+        transmitted = 0
+        loss = 0
+        rtt_min = 0.0
+        rtt_avg = 0.0
+        rtt_max = 0.0
+        rtt_mdev = 0.0
+
+        lines = full_results.split('\n')
+        for count, line in enumerate(lines):
+            cell = line.split(' ')
+            if count == 1:
+                transmitted = cell[0]
+                loss = cell[5]
+                loss = int(loss[:-1]) #Shave off the %
+            if count == 2:
+                numbers = cell[3].split('/')
+                rtt_min = numbers[0]
+                rtt_avg = numbers[1]
+                rtt_max = numbers[2]
+                rtt_mdev = numbers[3]
+
+        output_dict = {}
+        results_list = []
+        if loss < 100:
+            results_list.append(
+                {
+                    'ip_address': destination,
+                    'rtt': rtt_avg
+                }
+            )
+
+            output_dict['success'] = {
+                'probes_sent': transmitted,
+                'packet_loss': loss,
+                'rtt_min': rtt_min,
+                'rtt_max': rtt_max,
+                'rtt_avg': rtt_avg,
+                'rtt_stddev': rtt_mdev,
+                'results': results_list
+            }
+        else:
+            output_dict['error'] = 'unknown host {}'.format(destination)
+
+        return output_dict
+
+    def _ping_destination(self, ping_target, is_ipv4=True, data_size=100, time_out=2, interval=2,
+                          reps=5, time_stamp=False, record_route=False, vrf="default", **kwargs):
+        """
+        Perform a Ping command to a specified destination
+
+        :param ping_target: Destination address as a string
+        :param is_ipv4: Boolean True if the destination is an IPv4 address
+        :param data_size: Integer for packet size in bytes
+        :param time_out: Integer for timeout value
+        :param interval: Integer for time between packets in seconds
+        :param reps: Integer for the number of signals sent in repetition
+        :param time_stamp: Boolean True if the time stamp should be included in the results
+        :param record_route: Boolean True if the route taken should be recorded in the results
+        :param vrf: String of the VRF name that the ping should be sent.  If using the Management VRF, set this to mgmt
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing fan information
+        """
+
+        target_url = kwargs["url"] + "ping?"
+        print(str(ping_target))
+        if not ping_target:
+            raise Exception("ERROR: No valid ping target set")
+        else:
+            target_url += 'ping_target={}&'.format(str(ping_target))
+            target_url += 'is_ipv4={}&'.format(str(is_ipv4))
+            target_url += 'data_size={}&'.format(str(data_size))
+            target_url += 'ping_time_out={}&'.format(str(time_out))
+            target_url += 'ping_interval={}&'.format(str(interval))
+            target_url += 'ping_repetitions={}&'.format(str(reps))
+            target_url += 'include_time_stamp={}&'.format(str(time_stamp))
+            target_url += 'record_route={}&'.format(str(record_route))
+            if vrf == 'mgmt':
+                target_url += 'mgmt=true'
+            else:
+                target_url += 'mgmt=false'
+
+        response = kwargs["s"].get(target_url, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Ping failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            ping_dict = {}
+        else:
+            logging.info("SUCCESS: Ping succeeded")
+            ping_dict = response.json()
+
+        return ping_dict
+
+    def _get_fan_info(self, params={}, **kwargs):
+        """
+        Perform a GET call to get the fan information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing fan information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/fans/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of fan information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            fan_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of fan information succeeded")
+            fan_info_dict = response.json()
+
+        return fan_info_dict
+
+    def _get_temperature(self, params={}, **kwargs):
+        """
+        Perform a GET call to get the temperature information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing temperature information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/temp_sensors/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of temperature information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            temp_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of temperature information succeeded")
+            temp_info_dict = response.json()
+
+        return temp_info_dict
+
+    def _get_power_supplies(self, params={}, **kwargs):
+        """
+        Perform a GET call to get the power supply information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing power supply information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/power_supplies/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of PSU information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            temp_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of PSU information succeeded")
+            temp_info_dict = response.json()
+
+        return temp_info_dict
+
+    def _get_resource_utilization(self, params={}, **kwargs):
+        """
+        Perform a GET call to get the cpu, memory, and open_fds of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing resource utilization information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/management_module/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of resource utilization info failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            resources_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of resource utilization information succeeded")
+            resources_dict = response.json()
+
+        return resources_dict
+
+    def _get_ntp_associations(self, params={}, **kwargs):
+        """
+        Perform a GET call to get the NTP associations across all VRFs
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing all of the NTP associations on the switch
+        """
+
+        target_url = kwargs["url"] + "system/vrfs/*/ntp_associations"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        associations_dict = {}
+        for server_uri in response:
+            server_name = server_uri[(server_uri.rfind('/') + 1):]  # Takes string after last '/'
+            associations_dict[server_name] = {}
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of resource utilization info failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            associations_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of resource utilization information succeeded")
+            associations_dict = response.json()
+
+        return associations_dict
+
+    def _get_json_configuration(self, checkpoint="running-config", params={}, **kwargs):
+        """
+        Perform a GET call to retrieve a configuration file based off of the checkpoint name
+
+        :param checkpoint: String name of the checkpoint configuration
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: JSON format of the configuration
+        """
+
+        target_url = kwargs["url"] + "fullconfigs/{}".format(checkpoint)
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting configuration checkpoint named %s failed with status code %d: %s"
+                            % (checkpoint, response.status_code, response.text))
+            configuration_json = {}
+        else:
+            logging.info("SUCCESS: Getting configuration checkpoint named %s succeeded" % checkpoint)
+            configuration_json = response.json()
+
+        return configuration_json
