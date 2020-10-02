@@ -22,6 +22,7 @@ import telnetlib
 import tempfile
 import uuid
 import inspect
+import logging
 from collections import defaultdict
 
 from netaddr import IPNetwork
@@ -177,7 +178,6 @@ class AOSCXDriver(NetworkDriver):
 
         return interfaces_return
 
-
     def get_interfaces_counters(self):
         """
         Implementation of NAPALM method get_interfaces_counters.  This gives statistic information
@@ -231,7 +231,6 @@ class AOSCXDriver(NetworkDriver):
             )
         return interface_stats_dictionary
 
-
     def get_lldp_neighbors(self):
         """
         Implementation of NAPALM method 'get_lldp_neighbors'.  This is used to retrieve all
@@ -249,20 +248,18 @@ class AOSCXDriver(NetworkDriver):
             interface_name = pyaoscx.common_ops._replace_percents(interface_name)
             interface_details = \
                 pyaoscx.lldp.get_lldp_neighbor_info(interface_name, **self.session_info)
-            interface_dictionary = {
-                interface_name: {
-                    [
-                        {
-                            'hostname': interface_details['neighbor_info']['chassis_name'],
-                            'port:': interface_details['port_id']
-                        }
-                    ]
+
+            if interface_name not in lldp_brief_return.keys():
+                lldp_brief_return[interface_name] = []
+
+            lldp_brief_return[interface_name].append(
+                {
+                    'hostname': interface_details['neighbor_info']['chassis_name'],
+                    'port:': interface_details['port_id']
                 }
-            }
-            lldp_brief_return.update(interface_dictionary)
+            )
 
         return lldp_brief_return
-
 
     def get_lldp_neighbors_detail(self, interface=""):
         """
@@ -293,13 +290,30 @@ class AOSCXDriver(NetworkDriver):
             * remote_system_enabled_capab (list)
 
         """
-        interface_details = pyaoscx.lldp.get_lldp_neighbor_info(interface, **self.session_info)
-        remote_capabilities = [x.lower() for x in interface_details['chassis_capability_available']]
-        remote_enabled = [x.lower() for x in interface_details['chassis_capability_enabled']]
-        lldp_details_return = {
-            interface: [
+        lldp_interfaces = []
+        lldp_details_return = {}
+        if interface:
+            lldp_interfaces.append(interface)
+        else:
+            lldp_interfaces_list = pyaoscx.lldp.get_all_lldp_neighbors(**self.session_info)
+            for interface_uri in lldp_interfaces_list:
+                interface_name = interface_uri[interface_uri.find('interfaces/') + 11:
+                                               interface_uri.rfind('/lldp_neighbors')]
+                interface_name = pyaoscx.common_ops._replace_percents(interface_name)
+                lldp_interfaces.append(interface_name)
+
+        for single_interface in lldp_interfaces:
+            if single_interface not in lldp_details_return.keys():
+                lldp_details_return[single_interface] = []
+
+            interface_details = pyaoscx.lldp.get_lldp_neighbor_info(single_interface, **self.session_info)
+            remote_capabilities = ''.join(
+                [x.lower() for x in interface_details['neighbor_info']['chassis_capability_available']])
+            remote_enabled = ''.join(
+                [x.lower() for x in interface_details['neighbor_info']['chassis_capability_enabled']])
+            lldp_details_return[single_interface].append(
                 {
-                    'parent_interface': interface,
+                    'parent_interface': single_interface,
                     'remote_chassis_id': interface_details['chassis_id'],
                     'remote_system_name': interface_details['neighbor_info']['chassis_name'],
                     'remote_port': interface_details['port_id'],
@@ -309,11 +323,83 @@ class AOSCXDriver(NetworkDriver):
                         interface_details['neighbor_info']['chassis_description'],
                     'remote_system_capab': remote_capabilities,
                     'remote_system_enable_capab':  remote_enabled
-                }
-            ]
-        }
-
+                    }
+            )
         return lldp_details_return
+
+    def get_environment(self):
+        """
+        Implementation of NAPALM method get_environment()
+        :return: Returns a dictionary where:
+            * fans is a dictionary of dictionaries where the key is the location and the values:
+                 * status (True/False) - True if it's ok, false if it's broken
+            * temperature is a dict of dictionaries where the key is the location and the values:
+                 * temperature (float) - Temperature in celsius the sensor is reporting.
+                 * is_alert (True/False) - True if the temperature is above the alert threshold
+                 * is_critical (True/False) - True if the temp is above the critical threshold
+            * power is a dictionary of dictionaries where the key is the PSU id and the values:
+                 * status (True/False) - True if it's ok, false if it's broken
+                 * capacity (float) - Capacity in W that the power supply can support
+                 * output (float) - Watts drawn by the system (Not Supported)
+            * cpu is a dictionary of dictionaries where the key is the ID and the values:
+                 * %usage - Current percent usage of the device
+            * memory is a dictionary with:
+                 * available_ram (int) - Total amount of RAM installed in the device (Not Supported)
+                 * used_ram (int) - RAM in use in the device
+        """
+        fan_details = self._get_fan_info(**self.session_info)
+        fan_dict = {}
+        for fan in fan_details:
+            new_dict = {fan['name']: fan['status'] == 'ok'}
+            fan_dict.update(new_dict)
+
+        temp_details = self._get_temperature(**self.session_info)
+        temp_dict = {}
+        for sensor in temp_details:
+            new_dict = {
+                sensor['location']: {
+                    'temperature': float(sensor['temperature']/1000),
+                    'is_alert': sensor['status'] == 'critical',
+                    'is_critical': sensor['status'] == 'emergency'
+                }
+            }
+            temp_dict.update(new_dict)
+
+        psu_details = self._get_power_supplies(**self.session_info)
+        psu_dict = {}
+        for psu in psu_details:
+            new_dict = {
+                psu['name']: {
+                    'status': psu['status'] == 'ok',
+                    'capacity': float(psu['characteristics']['maximum_power']),
+                    'output': 'N/A'
+                }
+            }
+            psu_dict.update(new_dict)
+
+        resources_details = self._get_resource_utilization(**self.session_info)
+        cpu_dict = {}
+        mem_dict = {}
+        for mm in resources_details:
+            new_dict = {
+                mm['name']: {
+                    '%usage': mm['resource_utilization']['cpu']
+                }
+            }
+            cpu_dict.update(new_dict)
+            mem_dict = {
+                'available_ram': 'N/A',
+                'used_ram': mm['resource_utilization']['memory']
+            }
+
+        environment = {
+            'fans': fan_dict,
+            'temperature': temp_dict,
+            'power': psu_dict,
+            'cpu': cpu_dict,
+            'memory': mem_dict
+        }
+        return environment
 
     def get_arp_table(self, vrf=""):
         """
@@ -454,3 +540,128 @@ class AOSCXDriver(NetworkDriver):
             )
         return mac_entries
 
+    def get_config(self, retrieve="all", full=False):
+        """
+        Return the configuration of a device.
+
+        Args:
+            retrieve(string): Which configuration type you want to populate, default is all of them.
+                              The rest will be set to "".
+            full(bool): Retrieve all the configuration. For instance, on ios, "sh run all".
+
+        Returns:
+          The object returned is a dictionary with a key for each configuration store:
+
+            - running(string) - Representation of the native running configuration
+            - candidate(string) - Representation of the native candidate configuration. If the
+              device doesnt differentiate between running and startup configuration this will an
+              empty string
+            - startup(string) - Representation of the native startup configuration. If the
+              device doesnt differentiate between running and startup configuration this will an
+              empty string
+        """
+        raise NotImplementedError
+
+    def _get_fan_info(params={}, **kwargs):
+        """
+        Perform a GET call to get the fan information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing fan information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/fans/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of fan information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            fan_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of fan information succeeded")
+            fan_info_dict = response.json()
+
+        return fan_info_dict
+
+    def _get_temperature(params={}, **kwargs):
+        """
+        Perform a GET call to get the temperature information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing temperature information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/temp_sensors/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of temperature information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            temp_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of temperature information succeeded")
+            temp_info_dict = response.json()
+
+        return temp_info_dict
+
+    def _get_power_supplies(params={}, **kwargs):
+        """
+        Perform a GET call to get the power supply information of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing power supply information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/*/*/power_supplies/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of PSU information failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            temp_info_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of PSU information succeeded")
+            temp_info_dict = response.json()
+
+        return temp_info_dict
+
+    def _get_resource_utilization(params={}, **kwargs):
+        """
+        Perform a GET call to get the cpu, memory, and open_fds of the switch
+        Note that this works for physical devices, not an OVA.
+
+        :param params: Dictionary of optional parameters for the GET request
+        :param kwargs:
+            keyword s: requests.session object with loaded cookie jar
+            keyword url: URL in main() function
+        :return: Dictionary containing resource utilization information
+        """
+
+        target_url = kwargs["url"] + "system/subsystems/management_module/*"
+
+        response = kwargs["s"].get(target_url, params=params, verify=False)
+
+        if not common_ops._response_ok(response, "GET"):
+            logging.warning("FAIL: Getting dictionary of resource utilization info failed with status code %d: %s"
+                            % (response.status_code, response.text))
+            resources_dict = {}
+        else:
+            logging.info("SUCCESS: Getting dictionary of resource utilization information succeeded")
+            resources_dict = response.json()
+
+        return resources_dict
