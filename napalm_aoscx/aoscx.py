@@ -256,7 +256,7 @@ class AOSCXDriver(NetworkDriver):
             lldp_brief_return[interface_name].append(
                 {
                     'hostname': interface_details['neighbor_info']['chassis_name'],
-                    'port:': interface_details['port_id']
+                    'port': interface_details['port_id']
                 }
             )
 
