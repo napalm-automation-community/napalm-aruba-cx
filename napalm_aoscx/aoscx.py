@@ -428,7 +428,7 @@ class AOSCXDriver(NetworkDriver):
                     {
                         'interface': entry['Physical Port'],
                         'mac': entry['MAC Address'],
-                        'ip': entry['MAC Address'],
+                        'ip': entry['IPv4 Address'],
                         'age': 0.0
                     }
                 )
