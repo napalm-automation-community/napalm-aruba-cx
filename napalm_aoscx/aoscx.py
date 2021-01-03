@@ -866,11 +866,11 @@ class AOSCXDriver(NetworkDriver):
             associations_dict[server_name] = {}
 
         if not common_ops._response_ok(response, "GET"):
-            logging.warning("FAIL: Getting dictionary of resource utilization info failed with status code %d: %s"
+            logging.warning("FAIL: Getting dictionary of NTP associations information failed with status code %d: %s"
                             % (response.status_code, response.text))
             associations_dict = {}
         else:
-            logging.info("SUCCESS: Getting dictionary of resource utilization information succeeded")
+            logging.info("SUCCESS: Getting dictionary of NTP associations information succeeded")
             associations_dict = response.json()
 
         return associations_dict
