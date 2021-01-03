@@ -419,6 +419,8 @@ class AOSCXDriver(NetworkDriver):
         """
         arp_entries = []
         vrf_list = pyaoscx.vrf.get_all_vrfs(**self.session_info)
+        #prepend vrf
+        vrf = '/rest/v1/system/vrfs/' + vrf
         if vrf in vrf_list:
             vrf_list = [vrf]
         for vrf_entry in vrf_list:
