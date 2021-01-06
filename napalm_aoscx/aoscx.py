@@ -382,9 +382,14 @@ class AOSCXDriver(NetworkDriver):
         cpu_dict = {}
         mem_dict = {}
         for mm in resources_details:
+            if 'cpu' not in mm['resource_utilization']:
+                cpu = 'N/A'
+            else:
+                cpu =  mm['resource_utilization']['cpu']
+
             new_dict = {
                 mm['name']: {
-                    '%usage': mm['resource_utilization']['cpu']
+                    '%usage': cpu
                 }
             }
             cpu_dict.update(new_dict)
