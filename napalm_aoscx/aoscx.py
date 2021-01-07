@@ -393,9 +393,15 @@ class AOSCXDriver(NetworkDriver):
                 }
             }
             cpu_dict.update(new_dict)
+
+            if 'memory' not in mm['resource_utilization']:
+               memory = 'N/A'
+            else:
+               memory = mm['resource_utilization']['memory']
+
             mem_dict = {
                 'available_ram': 'N/A',
-                'used_ram': mm['resource_utilization']['memory']
+                'used_ram': memory
             }
 
         environment = {
