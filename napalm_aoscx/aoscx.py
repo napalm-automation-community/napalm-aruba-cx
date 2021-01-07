@@ -399,10 +399,13 @@ class AOSCXDriver(NetworkDriver):
             else:
                memory = mm['resource_utilization']['memory']
 
-            mem_dict = {
-                'available_ram': 'N/A',
-                'used_ram': memory
+            new_dict = {
+                mm['name']: {
+                    'available_ram': 'N/A',
+                    'used_ram': memory
+                }
             }
+            mem_dict.update(new_dict)
 
         environment = {
             'fans': fan_dict,
