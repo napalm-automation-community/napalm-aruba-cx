@@ -117,6 +117,10 @@ class AOSCXDriver(NetworkDriver):
         productinfo = pyaoscx.system.get_product_info(**self.session_info)
 
         uptime_seconds = (int(systeminfo['boot_time']))/1000
+        if 'hostname' not in systeminfo:
+            hostname = "ArubaCX"
+        else:
+            hostname = systeminfo['hostname']
 
         fact_info = {
             'uptime': uptime_seconds,
@@ -124,8 +128,8 @@ class AOSCXDriver(NetworkDriver):
             'os_version': systeminfo['software_info']['build_id'],
             'serial_number': productinfo['product_info']['serial_number'],
             'model': productinfo['product_info']['product_name'],
-            'hostname': systeminfo['hostname'],
-            'fqdn':systeminfo['hostname'],
+            'hostname': hostname,
+            'fqdn': hostname,
             'interface_list': pyaoscx.interface.get_all_interface_names(**self.session_info)
         }
         return fact_info
