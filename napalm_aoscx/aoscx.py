@@ -608,9 +608,9 @@ class AOSCXDriver(NetworkDriver):
                 "candidate": ""
             }
             if retrieve in ["running", "all"]:
-                config_dict['running'] = self._get_json_configuration("running-config")
+                config_dict['running'] = self._get_json_configuration("running-config", **self.session_info)
             if retrieve in ["startup", "all"]:
-                config_dict['startup'] = self._get_json_configuration("startup-config")
+                config_dict['startup'] = self._get_json_configuration("startup-config", **self.session_info)
             if retrieve in ["candidate", "all"]:
                 config_dict['candidate'] = self.candidate_config
 
