@@ -15,7 +15,6 @@ may have not been properly tested in older versions.
     * get_lldp_neighbors_detail - Get LLDP Neighbor details from a device.
     * get_mac_address_table - Get the MAC Address table from a device.
     * get_ntp_servers - Gets NTP information from a network device.
-    * get_route_to - Shows an IP route on a device.
     * get_snmp_information - Get the SNMP information of a device.
     * is_alive - Check to see if the connection to the device is up.
     * ping - Execute a ping command from the device.
