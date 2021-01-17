@@ -114,7 +114,16 @@ class AOSCXDriver(NetworkDriver):
          * interface_list - List of the interfaces of the device
         """
         systeminfo = pyaoscx.system.get_system_info(**self.session_info)
-        productinfo = pyaoscx.system.get_product_info(**self.session_info)
+        if systeminfo['platform_name'] == 'X86-64': #it is Virtual CX (OVA)
+            #there is no product_info on Virtual CX (OVA)...
+            productinfo = dict(
+                product_info = dict (
+                    serial_number = "N/A",
+                    product_name = "VirtualCX (OVA)",
+                )
+            )
+        else:
+            productinfo = pyaoscx.system.get_product_info(**self.session_info)
 
         uptime_seconds = (int(systeminfo['boot_time']))/1000
         if 'hostname' not in systeminfo:
