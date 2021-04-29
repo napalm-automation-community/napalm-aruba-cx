@@ -208,31 +208,70 @@ class AOSCXDriver(NetworkDriver):
         interface_stats_dictionary = {}
         interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
-            interface_details = pyaoscx.interface.get_interface(line, **self.session_info)
-            interface_stats_dictionary.update(
-                {
-                    line: {
-                        'tx_errors': -1,
-                        'rx_errors': -1,
-                        'tx_discards': -1,
-                        'rx_discards': -1,
-                        'tx_octets': interface_details['statistics']['tx_bytes'],
-                        'rx_octets': interface_details['statistics']['rx_bytes'],
-                        'tx_unicast_packets':
-                            interface_details['statistics']['if_hc_out_unicast_packets'],
-                        'rx_unicast_packets':
-                            interface_details['statistics']['if_hc_in_unicast_packets'],
-                        'tx_multicast_packets':
-                            interface_details['statistics']['if_out_multicast_packets'],
-                        'rx_multicast_packets':
-                            interface_details['statistics']['if_in_multicast_packets'],
-                        'tx_broadcast_packets':
-                            interface_details['statistics']['if_out_broadcast_packets'],
-                        'rx_broadcast_packets':
-                            interface_details['statistics']['if_in_broadcast_packets']
-                    }
-                }
-            )
+            interface_details = pyaoscx.interface.get_interface(
+                line, **self.session_info)
+            intf_counter = {
+                'tx_errors': 0,
+                'rx_errors': 0,
+                'tx_discards': 0,
+                'rx_discards': 0,
+                'tx_octets': 0,
+                'rx_octets': 0,
+                'tx_unicast_packets': 0,
+                'rx_unicast_packets': 0,
+                'tx_multicast_packets': 0,
+                'rx_multicast_packets': 0,
+                'tx_broadcast_packets': 0,
+                'rx_broadcast_packets': 0
+            }
+            if 'tx_bytes' in interface_details['statistics']:
+                intf_counter['tx_octets'] = interface_details['statistics']['tx_bytes']
+
+            if 'rx_bytes' in interface_details['statistics']:
+                intf_counter['rx_octets'] = interface_details['statistics']['rx_bytes']
+
+            if 'if_hc_out_unicast_packets' in interface_details['statistics']:
+                intf_counter['tx_unicast_packets'] = interface_details['statistics']['if_hc_out_unicast_packets']
+
+            if 'if_hc_in_unicast_packets' in interface_details['statistics']:
+                intf_counter['rx_unicast_packets'] = interface_details['statistics']['if_hc_in_unicast_packets']
+
+            if 'if_out_multicast_packets' in interface_details['statistics']:
+                intf_counter['tx_multicast_packets'] = interface_details['statistics']['if_out_multicast_packets']
+
+            if 'if_in_multicast_packets' in interface_details['statistics']:
+                intf_counter['rx_multicast_packets'] = interface_details['statistics']['if_in_multicast_packets']
+
+            if 'if_out_broadcast_packets' in interface_details['statistics']:
+                intf_counter['rx_bytes'] = interface_details['statistics']['if_out_broadcast_packets']
+
+            if 'if_in_broadcast_packets' in interface_details['statistics']:
+                intf_counter['rx_broadcast_packets'] = interface_details['statistics']['if_in_broadcast_packets']
+
+            interface_stats_dictionary.update({
+                line: intf_counter
+            })
+            """
+             'tx_errors': -1,
+             'rx_errors': -1,
+             'tx_discards': -1,
+             'rx_discards': -1,
+             'tx_octets': interface_details['statistics']['tx_bytes'],
+             'rx_octets': interface_details['statistics']['rx_bytes'],
+             'tx_unicast_packets':
+                 interface_details['statistics']['if_hc_out_unicast_packets'],
+             'rx_unicast_packets':
+                 interface_details['statistics']['if_hc_in_unicast_packets'],
+             'tx_multicast_packets':
+                 interface_details['statistics']['if_out_multicast_packets'],
+             'rx_multicast_packets':
+                 interface_details['statistics']['if_in_multicast_packets'],
+             'tx_broadcast_packets':
+                 interface_details['statistics']['if_out_broadcast_packets'],
+             'rx_broadcast_packets':
+                 interface_details['statistics']['if_in_broadcast_packets']
+             """
+
         return interface_stats_dictionary
 
     def get_lldp_neighbors(self):
