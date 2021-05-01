@@ -208,7 +208,7 @@ class AOSCXDriver(NetworkDriver):
         interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
             interface_details = pyaoscx.interface.get_interface(
-                line, **self.session_info)
+                line, selector="statistics", **self.session_info)
             intf_counter = {
                 'tx_errors': 0,
                 'rx_errors': 0,
