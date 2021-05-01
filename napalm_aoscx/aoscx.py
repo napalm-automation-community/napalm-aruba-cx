@@ -187,8 +187,7 @@ class AOSCXDriver(NetworkDriver):
         """
         Implementation of NAPALM method get_interfaces_counters.  This gives statistic information
         for all interfaces that are on the switch.
-        Note:  Not currently implementing tx_errors, rx_errors, rx_discards, and tx_discards, and
-        those values will return -1.
+        Note: rx_discards, and tx_discards are equal to rx/tx dropped counters on Aruba CX
         :return: Returns a dictionary of dictionaries where the first key is an interface name
         and the inner dictionary contains the following keys:
 
@@ -247,6 +246,18 @@ class AOSCXDriver(NetworkDriver):
 
             if 'if_in_broadcast_packets' in interface_details['statistics']:
                 intf_counter['rx_broadcast_packets'] = interface_details['statistics']['if_in_broadcast_packets']
+
+            if 'tx_errors' in interface_details['statistics']:
+                intf_counter['tx_errors'] = interface_details['statistics']['tx_errors']
+
+            if 'rx_errors' in interface_details['statistics']:
+                intf_counter['rx_errors'] = interface_details['statistics']['rx_errors']
+
+            if 'tx_dropped' in interface_details['statistics']:
+                intf_counter['tx_discards'] = interface_details['statistics']['tx_dropped']
+
+            if 'rx_dropped' in interface_details['statistics']:
+                intf_counter['rx_discards'] = interface_details['statistics']['rx_dropped']
 
             interface_stats_dictionary.update({
                 line: intf_counter
