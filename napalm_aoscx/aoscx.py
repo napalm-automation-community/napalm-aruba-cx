@@ -49,7 +49,7 @@ import napalm.base.constants as c
 
 # Aruba AOS-CX lib
 import pyaoscx
-from pyaoscx import session, interface, system, common_ops, port, lldp, mac
+from pyaoscx import session, interface, system, common_ops, port, lldp, mac, vrf, arp
 
 class AOSCXDriver(NetworkDriver):
     """NAPALM driver for Aruba AOS-CX."""
@@ -475,16 +475,20 @@ class AOSCXDriver(NetworkDriver):
         """
         arp_entries = []
         vrf_list = pyaoscx.vrf.get_all_vrfs(**self.session_info)
+        #prepend vrf
+        vrf = '/rest/v1/system/vrfs/' + vrf
         if vrf in vrf_list:
             vrf_list = [vrf]
         for vrf_entry in vrf_list:
-            arp_list = pyaoscx.arp.get_arp_entries(vrf_entry, **self.session_info)
+            #remove '/rest/v1/system/vrfs' from vrf name...
+            myvrf = vrf_entry.replace('/rest/v1/system/vrfs/','')
+            arp_list = pyaoscx.arp.get_arp_entries(myvrf, **self.session_info)
             for entry in arp_list:
                 arp_entries.append(
                     {
                         'interface': entry['Physical Port'],
                         'mac': entry['MAC Address'],
-                        'ip': entry['MAC Address'],
+                        'ip': entry['IPv4 Address'],
                         'age': 0.0
                     }
                 )
