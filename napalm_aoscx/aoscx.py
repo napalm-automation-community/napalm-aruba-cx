@@ -187,8 +187,7 @@ class AOSCXDriver(NetworkDriver):
         """
         Implementation of NAPALM method get_interfaces_counters.  This gives statistic information
         for all interfaces that are on the switch.
-        Note:  Not currently implementing tx_errors, rx_errors, rx_discards, and tx_discards, and
-        those values will return -1.
+        Note: rx_discards, and tx_discards are equal to rx/tx dropped counters on Aruba CX
         :return: Returns a dictionary of dictionaries where the first key is an interface name
         and the inner dictionary contains the following keys:
 
@@ -208,32 +207,62 @@ class AOSCXDriver(NetworkDriver):
         interface_stats_dictionary = {}
         interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
-            interface_details = pyaoscx.interface.get_interface(line, **self.session_info)
-            print(interface_details['name'])
-            interface_stats_dictionary.update(
-                {
-                    line: {
-                        'tx_errors': -1,
-                        'rx_errors': -1,
-                        'tx_discards': -1,
-                        'rx_discards': -1,
-                        'tx_octets': interface_details['statistics']['tx_bytes'],
-                        'rx_octets': interface_details['statistics']['rx_bytes'],
-                        'tx_unicast_packets':
-                            interface_details['statistics']['if_hc_out_unicast_packets'],
-                        'rx_unicast_packets':
-                            interface_details['statistics']['if_hc_in_unicast_packets'],
-                        'tx_multicast_packets':
-                            interface_details['statistics']['if_out_multicast_packets'],
-                        'rx_multicast_packets':
-                            interface_details['statistics']['if_in_multicast_packets'],
-                        'tx_broadcast_packets':
-                            interface_details['statistics']['if_out_broadcast_packets'],
-                        'rx_broadcast_packets':
-                            interface_details['statistics']['if_in_broadcast_packets']
-                    }
-                }
-            )
+            interface_details = pyaoscx.interface.get_interface(
+                line, selector="statistics", **self.session_info)
+            intf_counter = {
+                'tx_errors': 0,
+                'rx_errors': 0,
+                'tx_discards': 0,
+                'rx_discards': 0,
+                'tx_octets': 0,
+                'rx_octets': 0,
+                'tx_unicast_packets': 0,
+                'rx_unicast_packets': 0,
+                'tx_multicast_packets': 0,
+                'rx_multicast_packets': 0,
+                'tx_broadcast_packets': 0,
+                'rx_broadcast_packets': 0
+            }
+            if 'tx_bytes' in interface_details['statistics']:
+                intf_counter['tx_octets'] = interface_details['statistics']['tx_bytes']
+
+            if 'rx_bytes' in interface_details['statistics']:
+                intf_counter['rx_octets'] = interface_details['statistics']['rx_bytes']
+
+            if 'if_hc_out_unicast_packets' in interface_details['statistics']:
+                intf_counter['tx_unicast_packets'] = interface_details['statistics']['if_hc_out_unicast_packets']
+
+            if 'if_hc_in_unicast_packets' in interface_details['statistics']:
+                intf_counter['rx_unicast_packets'] = interface_details['statistics']['if_hc_in_unicast_packets']
+
+            if 'if_out_multicast_packets' in interface_details['statistics']:
+                intf_counter['tx_multicast_packets'] = interface_details['statistics']['if_out_multicast_packets']
+
+            if 'if_in_multicast_packets' in interface_details['statistics']:
+                intf_counter['rx_multicast_packets'] = interface_details['statistics']['if_in_multicast_packets']
+
+            if 'if_out_broadcast_packets' in interface_details['statistics']:
+                intf_counter['rx_bytes'] = interface_details['statistics']['if_out_broadcast_packets']
+
+            if 'if_in_broadcast_packets' in interface_details['statistics']:
+                intf_counter['rx_broadcast_packets'] = interface_details['statistics']['if_in_broadcast_packets']
+
+            if 'tx_errors' in interface_details['statistics']:
+                intf_counter['tx_errors'] = interface_details['statistics']['tx_errors']
+
+            if 'rx_errors' in interface_details['statistics']:
+                intf_counter['rx_errors'] = interface_details['statistics']['rx_errors']
+
+            if 'tx_dropped' in interface_details['statistics']:
+                intf_counter['tx_discards'] = interface_details['statistics']['tx_dropped']
+
+            if 'rx_dropped' in interface_details['statistics']:
+                intf_counter['rx_discards'] = interface_details['statistics']['rx_dropped']
+
+            interface_stats_dictionary.update({
+                line: intf_counter
+            })
+
         return interface_stats_dictionary
 
     def get_lldp_neighbors(self):
