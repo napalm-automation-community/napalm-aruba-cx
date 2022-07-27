@@ -49,7 +49,7 @@ import napalm.base.constants as c
 
 # Aruba AOS-CX lib
 import pyaoscx
-from pyaoscx import session, interface, system, common_ops, port, lldp, mac
+from pyaoscx import session, interface, system, common_ops, port, lldp, mac, vlan, vrf, arp
 
 class AOSCXDriver(NetworkDriver):
     """NAPALM driver for Aruba AOS-CX."""
@@ -76,7 +76,7 @@ class AOSCXDriver(NetworkDriver):
         Implementation of NAPALM method 'open' to open a connection to the device.
         """
         try:
-            self.session_info = dict(s=pyaoscx.session.login(self.base_url, self.username,
+            self.session_info = dict(s=session.login(self.base_url, self.username,
                                                              self.password), url=self.base_url)
             self.isAlive = True
         except ConnectionError as error:
@@ -88,7 +88,7 @@ class AOSCXDriver(NetworkDriver):
         Implementation of NAPALM method 'close'. Closes the connection to the device and does
         the necessary cleanup.
         """
-        pyaoscx.session.logout(**self.session_info)
+        session.logout(**self.session_info)
         self.isAlive = False
 
     def is_alive(self):
@@ -113,8 +113,8 @@ class AOSCXDriver(NetworkDriver):
          * serial_number - Serial number of the device
          * interface_list - List of the interfaces of the device
         """
-        systeminfo = pyaoscx.system.get_system_info(**self.session_info)
-        productinfo = pyaoscx.system.get_product_info(**self.session_info)
+        systeminfo = system.get_system_info(**self.session_info)
+        productinfo = system.get_product_info(**self.session_info)
 
         uptime_seconds = (int(systeminfo['boot_time']))/1000
 
@@ -126,7 +126,7 @@ class AOSCXDriver(NetworkDriver):
             'model': productinfo['product_info']['product_name'],
             'hostname': systeminfo['hostname'],
             'fqdn':systeminfo['hostname'],
-            'interface_list': pyaoscx.interface.get_all_interface_names(**self.session_info)
+            'interface_list': interface.get_all_interface_names(**self.session_info)
         }
         return fact_info
 
@@ -147,9 +147,9 @@ class AOSCXDriver(NetworkDriver):
          * mac_address (string)
         """
         interfaces_return = {}
-        interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
+        interface_list = interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
-            interface_details = pyaoscx.interface.get_interface(line, **self.session_info)
+            interface_details = interface.get_interface(line, **self.session_info)
             if 'description' not in interface_details:
                 interface_details['description'] = ""
             if 'max_speed' not in interface_details['hw_intf_info']:
@@ -202,9 +202,9 @@ class AOSCXDriver(NetworkDriver):
             * rx_broadcast_packets (int)
         """
         interface_stats_dictionary = {}
-        interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
+        interface_list = interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
-            interface_details = pyaoscx.interface.get_interface(line, **self.session_info)
+            interface_details = interface.get_interface(line, **self.session_info)
             print(interface_details['name'])
             interface_stats_dictionary.update(
                 {
@@ -242,13 +242,13 @@ class AOSCXDriver(NetworkDriver):
             * port
         """
         lldp_brief_return = {}
-        lldp_interfaces_list = pyaoscx.lldp.get_all_lldp_neighbors(**self.session_info)
+        lldp_interfaces_list = lldp.get_all_lldp_neighbors(**self.session_info)
         for interface_uri in lldp_interfaces_list:
             interface_name = interface_uri[interface_uri.find('interfaces/') + 11:
                                            interface_uri.rfind('/lldp_neighbors')]
-            interface_name = pyaoscx.common_ops._replace_percents(interface_name)
+            interface_name = common_ops._replace_percents(interface_name)
             interface_details = \
-                pyaoscx.lldp.get_lldp_neighbor_info(interface_name, **self.session_info)
+                lldp.get_lldp_neighbor_info(interface_name, **self.session_info)
 
             if interface_name not in lldp_brief_return.keys():
                 lldp_brief_return[interface_name] = []
@@ -296,18 +296,18 @@ class AOSCXDriver(NetworkDriver):
         if interface:
             lldp_interfaces.append(interface)
         else:
-            lldp_interfaces_list = pyaoscx.lldp.get_all_lldp_neighbors(**self.session_info)
+            lldp_interfaces_list = lldp.get_all_lldp_neighbors(**self.session_info)
             for interface_uri in lldp_interfaces_list:
                 interface_name = interface_uri[interface_uri.find('interfaces/') + 11:
                                                interface_uri.rfind('/lldp_neighbors')]
-                interface_name = pyaoscx.common_ops._replace_percents(interface_name)
+                interface_name = common_ops._replace_percents(interface_name)
                 lldp_interfaces.append(interface_name)
 
         for single_interface in lldp_interfaces:
             if single_interface not in lldp_details_return.keys():
                 lldp_details_return[single_interface] = []
 
-            interface_details = pyaoscx.lldp.get_lldp_neighbor_info(single_interface, **self.session_info)
+            interface_details = lldp.get_lldp_neighbor_info(single_interface, **self.session_info)
             remote_capabilities = ''.join(
                 [x.lower() for x in interface_details['neighbor_info']['chassis_capability_available']])
             remote_enabled = ''.join(
@@ -418,11 +418,11 @@ class AOSCXDriver(NetworkDriver):
             * age (float)
         """
         arp_entries = []
-        vrf_list = pyaoscx.vrf.get_all_vrfs(**self.session_info)
+        vrf_list = vrf.get_all_vrfs(**self.session_info)
         if vrf in vrf_list:
             vrf_list = [vrf]
         for vrf_entry in vrf_list:
-            arp_list = pyaoscx.arp.get_arp_entries(vrf_entry, **self.session_info)
+            arp_list = arp.get_arp_entries(vrf_entry, **self.session_info)
             for entry in arp_list:
                 arp_entries.append(
                     {
@@ -447,9 +447,9 @@ class AOSCXDriver(NetworkDriver):
             * prefix_length (int)
         """
         interface_ip_dictionary = {}
-        interface_list = pyaoscx.interface.get_all_interface_names(**self.session_info)
+        interface_list = interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
-            interface_info = pyaoscx.port.get_port(line, **self.session_info)
+            interface_info = port.get_port(line, **self.session_info)
             interface_ip_dictionary = {
                 line: {}
             }
@@ -519,15 +519,15 @@ class AOSCXDriver(NetworkDriver):
             * last_move (float)
         """
         mac_entries = []
-        mac_list = pyaoscx.mac.get_all_mac_addresses_on_system(**self.session_info)
+        mac_list = mac.get_all_mac_addresses_on_system(**self.session_info)
         for mac_uri in mac_list:
             full_uri = mac_uri[mac_uri.find('vlans/') + 6:]
-            mac = pyaoscx.common_ops._replace_special_characters(full_uri[full_uri.rfind('/') + 1:])
+            mac = common_ops._replace_special_characters(full_uri[full_uri.rfind('/') + 1:])
             full_uri = full_uri[:full_uri.rfind('/')]
             mac_type = full_uri[full_uri.rfind('/') + 1:]
             full_uri = full_uri[:full_uri.rfind('/')]
             vlan = int(full_uri[:full_uri.rfind('/')])
-            mac_info = pyaoscx.mac.get_mac_info(vlan, mac_type, mac, **self.session_info)
+            mac_info = mac.get_mac_info(vlan, mac_type, mac, **self.session_info)
             mac_entries.append(
                 {
                     'mac': mac,
@@ -560,8 +560,8 @@ class AOSCXDriver(NetworkDriver):
             "location": ""
         }
 
-        systeminfo = pyaoscx.system.get_system_info(**self.session_info)
-        productinfo = pyaoscx.system.get_product_info(**self.session_info)
+        systeminfo = system.get_system_info(**self.session_info)
+        productinfo = system.get_product_info(**self.session_info)
 
         communities_dict = {}
         for community_name in systeminfo['snmp_communities']:
