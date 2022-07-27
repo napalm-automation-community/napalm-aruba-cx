@@ -900,3 +900,38 @@ class AOSCXDriver(NetworkDriver):
             configuration_json = response.json()
 
         return configuration_json
+
+def get_vlans(self):
+        """
+        Implementation of NAPALM method 'get_vlans'. This is used to retrieve all vlan
+        information. 
+
+        :return: Returns a dictionary of dictionaries. The keys for the first dictionary will be the
+        vlan_id of the vlan. The inner dictionary will containing the following data for
+        each vlan:
+         * name (text_type)
+         * interfaces (list)
+        """
+        ports_list = port.get_all_ports(**self.session_info)
+        vlan_interface_data = defaultdict(list)
+        for port_entry in ports_list:
+            port_data = port.get_port(port_entry.split('/')[-1], 2, **self.session_info)
+            if '/' in port_data['name']:
+                if (len(port_data['applied_vlan_trunks']) > 0):
+                    vlan_id = port_data['applied_vlan_trunks'][0]['id']
+                    vlan_interface_data[vlan_id].append(port_data['name'])
+                elif 'applied_vlan_tag' in port_data:
+                    vlan_id = port_data['applied_vlan_tag']['id']
+                    vlan_interface_data[vlan_id].append(port_data['name'])
+        vlans_list = vlan.get_all_vlans(**self.session_info)
+        vlans_json = {}
+        for vlan_entry in vlans_list:
+            vlan_id = int(vlan_entry.split('/')[-1])
+            vlan_data = vlan.get_vlan(vlan_id, selector="configuration",**self.session_info)
+            if 'name' not in vlan_data:
+                vlan_data = vlan.get_vlan(vlan_id, selector="status",**self.session_info)
+            vlans_json[vlan_id] = {
+                "name": vlan_data['name'],
+                "interfaces": vlan_interface_data[vlan_id]
+            }
+        return vlans_json
