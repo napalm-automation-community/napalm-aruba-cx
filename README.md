@@ -17,6 +17,7 @@ may have not been properly tested in older versions.
     * get_ntp_servers - Gets NTP information from a network device.
     * get_route_to - Shows an IP route on a device.
     * get_snmp_information - Get the SNMP information of a device.
+    * get_vlans - Get the Vlans information of a device.
     * is_alive - Check to see if the connection to the device is up.
     * ping - Execute a ping command from the device.
     
