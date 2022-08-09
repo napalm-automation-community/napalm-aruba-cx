@@ -443,6 +443,7 @@ class AOSCXDriver(NetworkDriver):
         Values of the main dictionary represent are dictionaries that may consist of two keys
         'ipv4' and 'ipv6' (one, both or none) which are themselves dictionaries with the IP
         addresses as keys.
+        Note: VSF ports are not implemented
         Each IP Address dictionary has the following keys:
             * prefix_length (int)
         """
@@ -450,58 +451,48 @@ class AOSCXDriver(NetworkDriver):
         interface_list = interface.get_all_interface_names(**self.session_info)
         for line in interface_list:
             interface_info = port.get_port(line, **self.session_info)
-            interface_ip_dictionary = {
-                line: {}
-            }
-
             try:
-
-                if interface_info['ip4_address']:
-                    # if interface_info.get('ip4_address'):
-                    interface_ip_dictionary[line]['ipv4'] = {
-                        interface_info['ip4_address'][:interface_info['ip4_address'].rfind('/')]: {
-                            'prefix_length':
-                                int(interface_info['ip4_address']
-                                    [interface_info['ip4_address'].rfind('/') + 1:])
+                interface_ip_list = {}
+                ip4_address = {}
+                ipv6_addresses = {}
+                if ('ip4_address' in interface_info and len(interface_info['ip4_address']) > 0):
+                    ip4_address= {
+                    interface_info['ip4_address'][:interface_info['ip4_address'].rfind('/')]: {
+                        'prefix_length':
+                            int(interface_info['ip4_address']
+                            [interface_info['ip4_address'].rfind('/') + 1:])
                         }
                     }
-                if interface_info.get('ip6_addresses'):
+                if ('ip6_addresses' in interface_info and len(interface_info['ip6_addresses']) > 0):
                     for address in interface_info['ip6_addresses']:
-                        if (interface_ip_dictionary.get(line)):
-                            if (interface_ip_dictionary.get(line).get('ipv6')):
-                                interface_ip_dictionary.get(line).get('ipv6').update(
-                                    {
-                                        address[:address.rfind('/')]: {
-                                            'prefix_length': int(address[address.rfind('/') + 1:])
-                                        }
-                                    }
-                                )
-                if interface_info.get('ip6_address_link_local'):
+                        ipv6_addresses[address[:address.rfind('/')]] = {
+                            'prefix_length': int(address[address.rfind('/') + 1:])
+                        }
+                if ('ip6_address_link_local' in interface_info and len(interface_info['ip6_address_link_local']) > 0):
                     for address_ll in interface_info['ip6_address_link_local']:
-                        if interface_ip_dictionary.get(line):
-                            if interface_ip_dictionary.get(line).get('ipv6'):
-                                interface_ip_dictionary.get(line).get('ipv6').update(
-                                    {
-                                        address_ll[:address_ll.rfind('/')]: {
-                                            'prefix_length': int(
-                                                address_ll[address_ll.rfind('/') + 1:])
-                                        }
-                                    }
-                                )
-                if interface_info.get('ip6_autoconfigured_addresses'):
+                        ipv6_addresses[address_ll[:address_ll.rfind('/')]] = {
+                            'prefix_length': int(address_ll[address_ll.rfind('/') + 1:])
+                        }
+                if ('ip6_autoconfigured_addresses' in interface_info and len(interface_info['ip6_autoconfigured_addresses']) > 0):
                     for address_auto in interface_info['ip6_autoconfigured_addresses']:
-                        # if interface_
-                        interface_ip_dictionary[line]['ipv6'].update(
-                            {
-                                address_auto[:address_auto.rfind('/')]: {
-                                    'prefix_length': int(address_auto[address_auto.rfind('/') + 1:])
-                                }
-                            }
-                        )
+                        ipv6_addresses[address_auto[:address_auto.rfind('/')]] = {
+                            'prefix_length': int(address_auto[address_auto.rfind('/') + 1:])
+                        }
+
+                if (len(ip4_address) > 0):
+                    interface_ip_list['ipv4'] = ip4_address
+
+                if (len(ipv6_addresses) > 0):
+                    interface_ip_list['ipv6'] = ipv6_addresses
+
+                if (len(interface_ip_list) > 0):
+                    interface_ip_dictionary[line] = interface_ip_list
+
             except Exception as e:
                 print(line)
                 print(e)
         return interface_ip_dictionary
+
 
     def get_mac_address_table(self):
         """
