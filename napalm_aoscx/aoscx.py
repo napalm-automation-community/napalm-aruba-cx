@@ -454,7 +454,6 @@ class AOSCXDriver(NetworkDriver):
             try:
                 interface_ip_list = {}
                 ip4_address = {}
-                ipv6_addresses = {}
                 if ('ip4_address' in interface_info and len(interface_info['ip4_address']) > 0):
                     ip4_address= {
                     interface_info['ip4_address'][:interface_info['ip4_address'].rfind('/')]: {
@@ -463,22 +462,15 @@ class AOSCXDriver(NetworkDriver):
                             [interface_info['ip4_address'].rfind('/') + 1:])
                         }
                     }
-                if ('ip6_addresses' in interface_info and len(interface_info['ip6_addresses']) > 0):
-                    for address in interface_info['ip6_addresses']:
-                        ipv6_addresses[address[:address.rfind('/')]] = {
-                            'prefix_length': int(address[address.rfind('/') + 1:])
-                        }
-                if ('ip6_address_link_local' in interface_info and len(interface_info['ip6_address_link_local']) > 0):
-                    for address_ll in interface_info['ip6_address_link_local']:
-                        ipv6_addresses[address_ll[:address_ll.rfind('/')]] = {
-                            'prefix_length': int(address_ll[address_ll.rfind('/') + 1:])
-                        }
-                if ('ip6_autoconfigured_addresses' in interface_info and len(interface_info['ip6_autoconfigured_addresses']) > 0):
-                    for address_auto in interface_info['ip6_autoconfigured_addresses']:
-                        ipv6_addresses[address_auto[:address_auto.rfind('/')]] = {
-                            'prefix_length': int(address_auto[address_auto.rfind('/') + 1:])
-                        }
-
+                ipv6_addresses = {}
+                ip6_keys = ['ip6_addresses', 'ip6_address_link_local', 'ip6_autoconfigured_addresses']
+                for key in ip6_keys:
+                    if (key in interface_info and len(interface_info[key]) > 0):
+                        for address in interface_info[key]:
+                            ipv6_addresses[address[:address.rfind('/')]] = {
+                                'prefix_length': int(address[address.rfind('/') + 1:])
+                            }
+                            
                 if (len(ip4_address) > 0):
                     interface_ip_list['ipv4'] = ip4_address
 
