@@ -564,8 +564,9 @@ class AOSCXDriver(NetworkDriver):
 
         snmp_dict['chassis_id'] = productinfo['product_info']['serial_number']
         snmp_dict['community'] = communities_dict
-        if 'system_contact' and 'system_location' in systeminfo['other_config']:
+        if 'system_contact' in systeminfo['other_config']:
             snmp_dict['contact'] = systeminfo['other_config']['system_contact']
+        if 'system_location' in systeminfo['other_config']:
             snmp_dict['location'] = systeminfo['other_config']['system_location']
 
         return snmp_dict
