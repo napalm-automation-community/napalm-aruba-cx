@@ -522,7 +522,7 @@ class AOSCXDriver(NetworkDriver):
             mac_entries.append(
                 {
                     'mac': mac,
-                    'interface': mac_info['port'][mac_info['port'].rfind('/')+1],
+                    'interface': mac_info['port'][mac_info['port'].rfind('/')+1:],
                     'vlan': vlan,
                     'static': (mac_type == 'static'),
                     'active': True,
