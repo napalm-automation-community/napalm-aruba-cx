@@ -419,8 +419,13 @@ class AOSCXDriver(NetworkDriver):
         """
         arp_entries = []
         vrf_list = vrf.get_all_vrfs(**self.session_info)
-        if vrf in vrf_list:
-            vrf_list = [vrf]
+        vrf_list = list(map(lambda vrf: vrf[vrf.rfind('/')+1:] , vrf_list))
+        if len(vrf) > 0:
+            if vrf in vrf_list:
+                vrf_list = [vrf]
+            else:
+                vrf_list_string = ", ".join(vrf_list)
+                raise Exception(f"ERROR: Not a valid VRF.\nPlease select from {vrf_list_string}.")
         for vrf_entry in vrf_list:
             arp_list = arp.get_arp_entries(vrf_entry, **self.session_info)
             for entry in arp_list:
