@@ -519,7 +519,7 @@ class AOSCXDriver(NetworkDriver):
             mac_entries.append(
                 {
                     'mac': mac,
-                    'interface': mac_info['port'][mac_info['port'].rfind('/')+1],
+                    'interface': mac_info['port'][mac_info['port'].rfind('/')+1:],
                     'vlan': vlan,
                     'static': (mac_type == 'static'),
                     'active': True,
@@ -540,6 +540,7 @@ class AOSCXDriver(NetworkDriver):
                 * mode (string) # read-write (rw), read-only (ro) (Unsupported)
             * contact (string)
             * location (string)
+        Empty attributes are returned as an empty string (e.g. '') where applicable.
         """
         snmp_dict = {
             "chassis_id": "",
@@ -560,8 +561,10 @@ class AOSCXDriver(NetworkDriver):
 
         snmp_dict['chassis_id'] = productinfo['product_info']['serial_number']
         snmp_dict['community'] = communities_dict
-        snmp_dict['contact'] = systeminfo['other_config']['system_contact']
-        snmp_dict['location'] = systeminfo['other_config']['system_location']
+        if 'system_contact' in systeminfo['other_config']:
+            snmp_dict['contact'] = systeminfo['other_config']['system_contact']
+        if 'system_location' in systeminfo['other_config']:
+            snmp_dict['location'] = systeminfo['other_config']['system_location']
 
         return snmp_dict
 
