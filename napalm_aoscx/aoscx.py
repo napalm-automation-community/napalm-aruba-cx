@@ -27,7 +27,8 @@ from collections import defaultdict
 
 from netaddr import IPNetwork
 from netaddr.core import AddrFormatError
-from netmiko import FileTransfer, InLineTransfer
+from netmiko import FileTransfer, InLineTransfer, ConnectHandler
+
 
 # NAPALM Base libs
 import napalm.base.helpers
@@ -57,17 +58,19 @@ class AOSCXDriver(NetworkDriver):
     def __init__(self, hostname, username, password, timeout=60, optional_args=None):
         """NAPALM Constructor for AOS-CX."""
         if optional_args is None:
-            optional_args = {}
+            optional_args = { 'use_cli': False }
         self.hostname = hostname
         self.username = username
         self.password = password
         self.timeout = timeout
+        self.optional_args = optional_args
 
         self.platform = "aoscx"
         self.profile = [self.platform]
         self.session_info = {}
         self.isAlive = False
         self.candidate_config = ''
+
 
         self.base_url = "https://{0}/rest/v1/".format(self.hostname)
 
@@ -82,6 +85,30 @@ class AOSCXDriver(NetworkDriver):
         except ConnectionError as error:
             # Raised if device not available or HTTPS REST is not enabled
             raise ConnectionException(str(error))
+
+        if self.optional_args['use_cli']:
+            device = {
+                'device_type':"aruba_os",
+                'ip':self.hostname,
+                'port':22,
+                'username':self.username,
+                'password':self.password,
+                'timeout':self.timeout,
+                'conn_timeout':self.timeout,
+                'verbose':False,
+            }
+            # device.update(self.optional_args)
+
+            try:
+                self.device = ConnectHandler(**device)
+                self.device.session_preparation()
+                self.device.send_command("", expect_string=r"#")
+                self.device.send_command("no page", expect_string=r"#")
+
+            except Exception:
+                raise ConnectionException(
+                    "Cannot connect to switch via SSH: %s" % (self.hostname)
+                )
 
     def close(self):
         """
@@ -475,7 +502,7 @@ class AOSCXDriver(NetworkDriver):
                             ipv6_addresses[address[:address.rfind('/')]] = {
                                 'prefix_length': int(address[address.rfind('/') + 1:])
                             }
-                            
+
                 if (len(ip4_address) > 0):
                     interface_ip_list['ipv4'] = ip4_address
 
@@ -599,9 +626,9 @@ class AOSCXDriver(NetworkDriver):
                 "candidate": ""
             }
             if retrieve in ["running", "all"]:
-                config_dict['running'] = self._get_json_configuration("running-config", **self.session_info)
+                config_dict['running'] = self._get_configuration("running-config", **self.session_info)
             if retrieve in ["startup", "all"]:
-                config_dict['startup'] = self._get_json_configuration("startup-config", **self.session_info)
+                config_dict['startup'] = self._get_configuration("startup-config", **self.session_info)
             if retrieve in ["candidate", "all"]:
                 config_dict['candidate'] = self.candidate_config
 
@@ -866,6 +893,17 @@ class AOSCXDriver(NetworkDriver):
 
         return associations_dict
 
+    def _get_configuration(self, checkpoint="running-config", params={}, **kwargs):
+        """
+        Use CLI to get running config if use_cli optional argument is set. Otherwise use json config by default.
+        """
+
+        if self.optional_args['use_cli']:
+            configuration = self.device.send_command("show %s" % (checkpoint))
+            return configuration
+
+        return self._get_json_configuration(checkpoint, **kwargs)
+
     def _get_json_configuration(self, checkpoint="running-config", params={}, **kwargs):
         """
         Perform a GET call to retrieve a configuration file based off of the checkpoint name
@@ -895,7 +933,7 @@ class AOSCXDriver(NetworkDriver):
 def get_vlans(self):
         """
         Implementation of NAPALM method 'get_vlans'. This is used to retrieve all vlan
-        information. 
+        information.
 
         :return: Returns a dictionary of dictionaries. The keys for the first dictionary will be the
         vlan_id of the vlan. The inner dictionary will containing the following data for
