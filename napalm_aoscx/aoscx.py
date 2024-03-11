@@ -71,7 +71,6 @@ class AOSCXDriver(NetworkDriver):
         self.isAlive = False
         self.candidate_config = ''
 
-
         self.base_url = "https://{0}/rest/v1/".format(self.hostname)
 
     def open(self):
@@ -117,6 +116,9 @@ class AOSCXDriver(NetworkDriver):
         """
         session.logout(**self.session_info)
         self.isAlive = False
+
+        if self.optional_args['use_cli']:
+            self.device.disconnect()
 
     def is_alive(self):
         """
